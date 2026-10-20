@@ -7,6 +7,28 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     RUST_VERSION=nightly-2024-05-02
 
+# RUN cat > /etc/apt/sources.list.d/ubuntu.sources <<'EOF'
+# Types: deb
+# URIs: https://mirrors.tuna.tsinghua.edu.cn/ubuntu
+# Suites: noble noble-updates noble-backports
+# Components: main restricted universe multiverse
+# Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+# # 默认注释了源码镜像以提高 apt update 速度，如有需要可自行取消注释
+# # Types: deb-src
+# # URIs: https://mirrors.tuna.tsinghua.edu.cn/ubuntu
+# # Suites: noble noble-updates noble-backports
+# # Components: main restricted universe multiverse
+# # Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+# # 以下安全更新软件源为官方源配置
+# Types: deb
+# URIs: http://security.ubuntu.com/ubuntu/
+# Suites: noble-security
+# Components: main restricted universe multiverse
+# Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+# EOF
+
 # Match the GitHub grading environment, including the QEMU 8.2 security updates.
 RUN apt-get update && apt-get install -y \
     ca-certificates curl git build-essential pkg-config python3 wget xz-utils \

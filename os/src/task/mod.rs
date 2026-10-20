@@ -14,6 +14,7 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
@@ -45,6 +46,8 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
+
+    tasks_statistics: [[isize;5];MAX_APP_NUM]
 }
 
 lazy_static! {
@@ -65,6 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    tasks_statistics: [[0;5];MAX_APP_NUM]
                 })
             },
         }
@@ -88,6 +92,20 @@ impl TaskManager {
             __switch(&mut _unused as *mut TaskContext, next_task_cx_ptr);
         }
         panic!("unreachable in run_first_task!");
+    }
+
+    /// Record syscall
+    fn record_syscall(&self,id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks_statistics[current][id] += 1;
+    }
+
+    /// Get syscall count
+    fn get_syscall_record(&self,id: usize) -> isize{
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks_statistics[current][id]
     }
 
     /// Change the status of current `Running` task into `Ready`.
@@ -168,4 +186,15 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Record Syscall
+pub fn record_syscall(id: usize){
+    TASK_MANAGER.record_syscall(id)
+}
+
+
+/// Get Syscall count
+pub fn get_syscall_record(id: usize) -> isize{
+    TASK_MANAGER.get_syscall_record(id)
 }
