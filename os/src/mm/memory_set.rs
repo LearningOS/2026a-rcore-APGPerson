@@ -63,6 +63,22 @@ impl MemorySet {
             None,
         );
     }
+
+    /// Remove
+    pub fn remove(&mut self,addr: VirtPageNum,end: VirtPageNum) -> bool{
+        let index = self.areas.iter().position(|val| val.vpn_range.get_start() == addr);
+        if index.is_none(){
+            return false;
+        }
+        let index = index.unwrap();
+        if self.areas[index].vpn_range.get_end() < end{
+            return false;
+        }
+        let mut area = self.areas.remove(index);
+        area.unmap(&mut self.page_table);
+        true
+    }
+    ///push
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {

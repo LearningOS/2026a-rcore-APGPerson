@@ -15,8 +15,10 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PageTableEntry, VirtAddr, VirtPageNum};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
@@ -46,6 +48,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    /// Syscall record
+    syscall: Vec<BTreeMap<usize,isize>>
 }
 
 lazy_static! {
@@ -55,22 +59,39 @@ lazy_static! {
         let num_app = get_num_app();
         println!("num_app = {}", num_app);
         let mut tasks: Vec<TaskControlBlock> = Vec::new();
+        let mut syscalls = Vec::new();
         for i in 0..num_app {
             tasks.push(TaskControlBlock::new(get_app_data(i), i));
+            syscalls.push(BTreeMap::new());
         }
         TaskManager {
             num_app,
             inner: unsafe {
-                UPSafeCell::new(TaskManagerInner {
-                    tasks,
-                    current_task: 0,
-                })
+                UPSafeCell::new(TaskManagerInner {tasks,current_task:0, syscall: syscalls })
             },
         }
     };
 }
 
 impl TaskManager {
+    /// Get current task's syscall count
+    pub fn get_syscall_data(&self,id: usize) -> isize{
+        let inner = self.inner.exclusive_access();
+        let data = inner.syscall[inner.current_task].get(&id);
+        data.map(|val| *val).unwrap_or(0)
+    }
+
+    /// Add current task's syscall count
+    pub fn set_syscall_data(&self,id: usize){
+        let mut inner = self.inner.exclusive_access();
+        let index = inner.current_task;
+        inner.syscall[index].entry(id)
+            .and_modify(|val| *val += 1)
+            .or_insert(1);
+    }
+
+
+
     /// Run the first task in task list.
     ///
     /// Generally, the first task in task list is an idle task (we call it zero process later).
@@ -132,6 +153,32 @@ impl TaskManager {
         let cur = inner.current_task;
         inner.tasks[cur].change_program_brk(size)
     }
+
+    /// Assume that no conflicts.
+    pub fn insert_framed_area(
+        &self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) {
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Remove frame
+    pub fn remove_frame(&self,addr: VirtPageNum,end: VirtPageNum) -> bool{
+        let mut inner = self.inner.exclusive_access();
+        let cur = inner.current_task;
+        inner.tasks[cur].memory_set.remove(addr, end)
+    }
+
+    /// Translate vaddr for current task
+    fn translate_addr(&self,vpn: VirtPageNum) -> Option<PageTableEntry>{
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].translate_addr(vpn)
+    }
+
 
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed
@@ -202,3 +249,32 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
+
+/// Translate addr for current task
+pub fn current_translate_addr(vpn: VirtPageNum) -> Option<PageTableEntry>{
+    TASK_MANAGER.translate_addr(vpn)
+}
+
+/// Remove page
+pub fn current_remove_page(addr: VirtPageNum,end: VirtPageNum) -> bool{
+    TASK_MANAGER.remove_frame(addr, end)
+}
+
+/// Insert frame
+pub fn current_insert_framed_area(
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) {
+        TASK_MANAGER.insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Get current task's syscall count
+    pub fn get_cur_syscall_data(id: usize) -> isize{
+        TASK_MANAGER.get_syscall_data(id)
+    }
+
+    /// Add current task's syscall count
+    pub fn set_cur_syscall_data(id: usize){
+        TASK_MANAGER.set_syscall_data(id);
+    }

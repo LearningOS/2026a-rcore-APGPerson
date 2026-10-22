@@ -2,7 +2,7 @@
 use super::TaskContext;
 use crate::config::TRAP_CONTEXT_BASE;
 use crate::mm::{
-    kernel_stack_position, MapPermission, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE,
+    KERNEL_SPACE, MapPermission, MemorySet, PageTableEntry, PhysPageNum, VirtAddr, VirtPageNum, kernel_stack_position,
 };
 use crate::trap::{trap_handler, TrapContext};
 
@@ -39,6 +39,22 @@ impl TaskControlBlock {
     pub fn get_user_token(&self) -> usize {
         self.memory_set.token()
     }
+
+    /// Get this task's addr mapping information
+    pub fn translate_addr(&self,vpn: VirtPageNum) -> Option<PageTableEntry>{
+        self.memory_set.translate(vpn)
+    }
+
+    /// Assume that no conflicts.
+    pub fn insert_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+        permission: MapPermission,
+    ) {
+        self.memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
     /// Based on the elf info in program, build the contents of task in a new address space
     pub fn new(elf_data: &[u8], app_id: usize) -> Self {
         // memory_set with elf program headers/trampoline/trap context/user stack
