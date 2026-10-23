@@ -47,7 +47,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
-use core::arch::global_asm;
+use core::{arch::global_asm, unreachable};
 
 global_asm!(include_str!("entry.asm"));
 /// clear BSS segment
@@ -76,5 +76,5 @@ pub fn rust_main() -> ! {
     fs::list_apps();
     task::add_initproc();
     task::run_tasks();
-    panic!("Unreachable in rust_main!");
+    unreachable!("Unreachable in rust_main!")
 }

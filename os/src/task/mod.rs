@@ -23,7 +23,7 @@ mod switch;
 mod task;
 
 use crate::fs::{open_file, OpenFlags};
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 pub use context::TaskContext;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -119,4 +119,11 @@ lazy_static! {
 ///Add init process to the manager
 pub fn add_initproc() {
     add_task(INITPROC.clone());
+}
+
+/// Get app elf data by name
+pub fn get_app_data_by_name(name: &str) -> Option<Vec<u8>>{
+    let inode = open_file(name, OpenFlags::RDONLY);
+    if inode.is_none(){return None}
+    Some(inode.unwrap().read_all())
 }

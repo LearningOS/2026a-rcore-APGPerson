@@ -24,17 +24,18 @@ pub struct OSInode {
 }
 /// The OS inode inner in 'UPSafeCell'
 pub struct OSInodeInner {
+    inode_number: u32,
     offset: usize,
     inode: Arc<Inode>,
 }
 
 impl OSInode {
     /// create a new inode in memory
-    pub fn new(readable: bool, writable: bool, inode: Arc<Inode>) -> Self {
+    pub fn new(readable: bool, writable: bool, inode: Arc<Inode>,inode_number: u32) -> Self {
         Self {
             readable,
             writable,
-            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode }) },
+            inner: unsafe { UPSafeCell::new(OSInodeInner { offset: 0, inode, inode_number }) },
         }
     }
     /// read all data from the inode
@@ -105,27 +106,39 @@ impl OpenFlags {
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
-        if let Some(inode) = ROOT_INODE.find(name) {
+        if let Some((id,inode)) = ROOT_INODE.find(name) {
             // clear size
             inode.clear();
-            Some(Arc::new(OSInode::new(readable, writable, inode)))
+            Some(Arc::new(OSInode::new(readable, writable, inode,id)))
         } else {
             // create file
             ROOT_INODE
-                .create(name)
-                .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
+                .create_new(name)
+                .map(|(id,inode)| Arc::new(OSInode::new(readable, writable, inode,id)))
         }
     } else {
-        ROOT_INODE.find(name).map(|inode| {
+        ROOT_INODE.find(name).map(|(id,inode)| {
             if flags.contains(OpenFlags::TRUNC) {
                 inode.clear();
             }
-            Arc::new(OSInode::new(readable, writable, inode))
+            Arc::new(OSInode::new(readable, writable, inode,id))
         })
     }
 }
+/// Linkat wrapper
+pub fn linkat(old_name: &str,new_name: &str) -> Result<(),()>{
+    ROOT_INODE
+    .link(new_name, old_name)
+}
+
+/// Unlink wrapper
+pub fn unlink(name: &str) -> Result<(),()> {
+    ROOT_INODE.unlink(name)
+}
+
 
 impl File for OSInode {
+    
     fn readable(&self) -> bool {
         self.readable
     }
@@ -155,5 +168,12 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    
+    fn stats(&self) -> super::Stat {
+        let inner = self.inner.exclusive_access();
+        let id = inner.inode_number;
+        let nlink = ROOT_INODE.get_inode_hardlink(id);
+        super::Stat { dev: 0, ino: id as u64, mode: super::StatMode::FILE, nlink, pad: [0;7] }
     }
 }

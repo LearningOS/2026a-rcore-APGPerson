@@ -1,15 +1,12 @@
 //! Process management syscalls
 //!
 use alloc::sync::Arc;
-
+use core::{mem::size_of, unreachable};
 use crate::{
-    fs::{open_file, OpenFlags},
-    mm::{translated_refmut, translated_str},
-    task::{
-        add_task, current_task, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
-    },
+    config::BIG_STRIDE, fs::{OpenFlags, open_file}, mm::{MapPermission, MappingResult, VirtAddr, translated_byte_buffer, translated_refmut, translated_str}, task::{add_task, current_task, current_user_token, exit_current_and_run_next, get_app_data_by_name, suspend_current_and_run_next,
+    }, timer::get_time_us,
 };
+        
 
 #[repr(C)]
 #[derive(Debug)]
@@ -21,7 +18,7 @@ pub struct TimeVal {
 pub fn sys_exit(exit_code: i32) -> ! {
     trace!("kernel:pid[{}] sys_exit", current_task().unwrap().pid.0);
     exit_current_and_run_next(exit_code);
-    panic!("Unreachable in sys_exit!");
+    unreachable!("Unreachable in sys_exit!")
 }
 
 pub fn sys_yield() -> isize {
@@ -110,16 +107,56 @@ pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
         "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let us = get_time_us();
+    // Panic on addr not available
+    let vec = translated_byte_buffer(current_user_token(),_ts as *const u8, size_of::<TimeVal>());
+    if vec.len() == 1{
+        unsafe{
+            *(vec[0].as_ptr() as *mut TimeVal) = TimeVal{
+                sec: us / 1_000_000,
+                usec: us % 1_000_000,
+            }
+        }
+    }else{
+        //跨页
+        if vec[0].len() != size_of::<usize>(){panic!("Not align ptr")}
+        if vec[1].len() != size_of::<usize>(){panic!("Not align ptr")}
+        unsafe{
+            *(vec[0].as_ptr() as *mut usize) = us / 1_000_000;
+            *(vec[1].as_ptr() as *mut usize) = us % 1_000_000;
+        }
+    }
+    0
 }
 
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(_start: usize, _len: usize, port: usize) -> isize {
     trace!(
         "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if port & !0x7 != 0 || port & 0x7 == 0{
+        return -1;
+    }
+    let mut permission = MapPermission::U;
+    if port & 0b1 != 0 {permission |= MapPermission::R}
+    if port & 0b10 != 0 {permission |= MapPermission::W}
+    if port & 0b100 != 0 {permission |= MapPermission::X}
+    let start = VirtAddr::from(_start);
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    if _len == 0{return 0}
+    let end = VirtAddr::from(start.0 + _len).ceil();
+
+    let tcb = current_task().unwrap();
+    let mut inner = tcb.inner_exclusive_access();
+    let MappingResult::NoneMapped = inner.memory_set.find_mapped_for_user(start.floor(), end.clone()) else{
+        return -1;
+    };
+    
+    inner.memory_set.insert_framed_area(start, end.into(), permission);
+    0
 }
 
 /// YOUR JOB: Implement munmap.
@@ -128,7 +165,18 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
         "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let start = VirtAddr::from(_start);
+    if start.page_offset() != 0 {
+        return -1;
+    }
+    let end = VirtAddr::from(_start + _len).ceil();
+    let tcb = current_task().unwrap();
+    let mut inner = tcb.inner_exclusive_access();
+    if inner.memory_set.remove(start.floor(), end){
+        0isize
+    }else{
+        -1isize
+    }
 }
 
 /// change data segment size
@@ -143,19 +191,36 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let token = current_user_token();
+    let path = translated_str(token, path);
+    if let Some(elf_data) = get_app_data_by_name(path.as_str()) {
+        let current_task = current_task().unwrap();
+        let new_task = current_task.spawn(elf_data.as_slice());
+        let new_pid = new_task.getpid();
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }    
 }
 
 // YOUR JOB: Set task priority.
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if prio < 2{
+        return -1;
+    }
+    let pass: u64 = prio as u64 / BIG_STRIDE;
+    let current_task = current_task().unwrap();
+    let mut inner = current_task.inner_exclusive_access();
+    inner.pass = pass;
+    prio
 }

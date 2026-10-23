@@ -1,4 +1,7 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
+use core::iter::zip;
+use core::mem::size_of;
+
 use super::{frame_alloc, FrameTracker, PhysAddr, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
 use alloc::string::String;
 use alloc::vec;
@@ -46,6 +49,11 @@ impl PageTableEntry {
     pub fn flags(&self) -> PTEFlags {
         PTEFlags::from_bits(self.bits as u8).unwrap()
     }
+    /// The page pointered by page table entry is able to let user access 
+    pub fn user(&self) -> bool{
+        (self.flags() & PTEFlags::U) != PTEFlags::empty()
+    }
+
     /// The page pointered by page table entry is valid?
     pub fn is_valid(&self) -> bool {
         (self.flags() & PTEFlags::V) != PTEFlags::empty()
@@ -198,6 +206,20 @@ pub fn translated_str(token: usize, ptr: *const u8) -> String {
         va += 1;
     }
     string
+}
+
+/// Copy a T to user space with user space ptr
+pub unsafe fn copy_to_user<T: Sized>(data: &T,token: usize,ptr: *mut T){
+    let buffer = translated_byte_buffer(token, ptr as *const u8, size_of::<T>());
+    let original = unsafe {
+        core::slice::from_raw_parts(data as *const T as *const u8, size_of::<T>())
+    };
+    zip(
+        original,
+        buffer
+        .into_iter()
+        .flatten()
+    ).for_each(|(src,dst)| *dst = *src);
 }
 
 #[allow(unused)]

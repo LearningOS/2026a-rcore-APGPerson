@@ -103,7 +103,7 @@ git clone https://github.com/LearningOS/rCore-Tutorial-Test.git ci-user/user
 这两条命令下载官方检查器和测试程序。已有对应目录时复用，不要删除自己的源码或报告。
 
 ```sh
-make -C ci-user test CHAPTER=3
+make -C ci-user test CHAPTER=6
 ```
 
 运行第三章测试并检查报告。后续切换到 `ch4`、`ch5`、`ch6`、`ch8` 时，将 `CHAPTER` 改为对应数字。只有全部测试、报告检查均通过且命令成功退出，才算本章完成；查看最终 `N/N` 时也要留意后续报错。

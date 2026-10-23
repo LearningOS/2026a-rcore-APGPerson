@@ -1,5 +1,6 @@
 //!Stdin & Stdout
 use super::File;
+use crate::fs::Stat;
 use crate::mm::UserBuffer;
 use crate::sbi::console_getchar;
 use crate::task::suspend_current_and_run_next;
@@ -11,6 +12,16 @@ pub struct Stdin;
 pub struct Stdout;
 
 impl File for Stdin {
+    fn stats(&self) -> super::Stat {
+        Stat{
+            dev: 0,
+            ino: 0,
+            mode: super::StatMode::NULL,
+            nlink: 1,
+            pad: [0;7],
+        }
+    }
+
     fn readable(&self) -> bool {
         true
     }
@@ -37,11 +48,20 @@ impl File for Stdin {
         1
     }
     fn write(&self, _user_buf: UserBuffer) -> usize {
-        panic!("Cannot write to stdin!");
+        panic!("Cannot write to stdin!")
     }
 }
 
 impl File for Stdout {
+    fn stats(&self) -> super::Stat {
+        Stat{
+            dev: 0,
+            ino: 0,
+            mode: super::StatMode::NULL,
+            nlink: 1,
+            pad: [0;7],
+        }
+    }
     fn readable(&self) -> bool {
         false
     }
