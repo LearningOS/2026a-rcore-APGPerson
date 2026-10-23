@@ -12,6 +12,16 @@ use core::arch::asm;
 use lazy_static::*;
 use riscv::register::satp;
 
+/// Find mapping result
+pub enum MappingResult{
+    /// Full addr mapped
+    FullMapped,
+    /// Not full addr mapped
+    NotFullMapped,
+    /// No addr mapped
+    NoneMapped
+}
+
 extern "C" {
     fn stext();
     fn etext();
@@ -48,6 +58,47 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+
+    /// Remove
+    pub fn remove(&mut self,addr: VirtPageNum,end: VirtPageNum) -> bool{
+        let index = self.areas.iter().position(|val| val.vpn_range.get_start() == addr);
+        if index.is_none(){
+            return false;
+        }
+        let index = index.unwrap();
+        if self.areas[index].vpn_range.get_end() < end{
+            return false;
+        }
+        let mut area = self.areas.remove(index);
+        area.unmap(&mut self.page_table);
+        true
+    }
+
+    /// Find [start,end) vpn is mapped in Page table
+    pub fn find_mapped_for_user(&self,
+        start_vpn: VirtPageNum,
+        end_vpn: VirtPageNum
+    ) -> MappingResult{
+        let mut vpn = start_vpn;
+        let mut not_mapped = false;
+        let mut status = MappingResult::NoneMapped;
+        while vpn < end_vpn{
+            match self.page_table.translate(vpn){
+                Some(pte) if pte.is_valid() && pte.user() => {
+                    status = MappingResult::NotFullMapped;
+                },
+                _ => {
+                    not_mapped = true
+                }
+            }
+            vpn.step();
+        }
+        if !not_mapped{
+            status = MappingResult::FullMapped;
+        }
+        status
+    }
+
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
