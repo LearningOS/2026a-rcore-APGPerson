@@ -92,6 +92,10 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     if tid == 0 {
         add_stopping_task(task);
     } else {
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.sema_detect.drop_thread(tid);
+        process_inner.mutex_detect.drop_thread(tid);
+        drop(process_inner);
         drop(task);
     }
     // however, if this is the main thread of current process
